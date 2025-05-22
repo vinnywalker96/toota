@@ -1,159 +1,164 @@
-## Table of Contents
-- [Introduction](#introduction)
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [APIUSAGE](#apiusage)
-- [DockerSetup](#dockersetup)
-- [Contributing](#contributing)
-- [Code of Conduct](#codeofconduct)
-- [License](#license)
+# Toota Transportation Platform
 
-## Introduction
-Welcome to Toota, your ultimate solution for seamless transportation and logistics services.
-
-With Toota, you can effortlessly connect with a diverse fleet of vehicles and experienced drivers to meet all your transportation needs. Whether you're moving goods, Toota ensures a reliable, efficient, and hassle-free experience every time.
-
-Join Toota today and experience the future of transportation!
+Toota is a digital platform for transportation services, connecting users with drivers for delivery and transportation needs.
 
 ## Features
-- **Diverse Fleet Options**: Choose from a variety of trucks including:
-  - 1 ton Truck
-  - 1.5 ton Truck
-  - 2 ton Truck
-  - 4 ton Truck
-  - Bakkie
-  - 8 ton Truck
-- **Experienced Drivers**: Connect with professional and experienced drivers for reliable transportation.
-- **User-Friendly Interface**: Enjoy a clean and intuitive user interface for a seamless booking experience.
-- **Responsive Design**: Access the platform from both desktop and mobile devices.
-- **Efficient Logistics**: Ensure reliable and efficient transportation services for all your needs.
-- **Hassle-Free Experience**: Benefit from a streamlined process that makes booking and managing rentals easy and stress-free.
 
-## Installation
-To get started with Toota, follow these steps:
+- User and driver authentication
+- Trip creation and management
+- Real-time bidding system
+- In-app chat messaging
+- SMS notifications
+- Payment processing
 
-### Backend (Django)
+## Technology Stack
+
+### Backend
+- Django REST Framework
+- Django Channels for WebSockets
+- PostgreSQL/SQLite database
+- Redis for WebSocket channel layer
+- Twilio for SMS notifications
+
+### Frontend
+- React.js
+- Tailwind CSS
+- WebSocket API for real-time communication
+
+## Setup Instructions
+
+### Prerequisites
+- Python 3.8+
+- Node.js 14+
+- Redis server (for WebSockets)
+- Twilio account (for SMS notifications)
+
+### Backend Setup
+
 1. Clone the repository:
-    ```bash
-    git clone https://github.com/MfundoDon/toota.git
-    ```
-2. Navigate to the backend directory:
-    ```bash
-    cd server 
-    ```
-3. Create a virtual environment and activate it:
-    ```bash
-    python -m venv venv
-    source venv/bin/activate
-    ```
-4. Install the required dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-5. Apply migrations and start the server:
-    ```bash
-    python manage.py migrate
-    python manage.py runserver
-    ```
-6. Access the Swagger API documentation:
-    - Open your browser and go to `http://127.0.0.1:8000/swagger/` to view the API documentation.
+   ```bash
+   git clone https://github.com/your-username/toota.git
+   cd toota/server
+   ```
 
-### Frontend (React + vite )
-1. Navigate to the frontend directory:
-    ```bash
-    cd client
-    ```
-2. Install the required dependencies:
-    ```bash
-    npm install
-    ```
-3. Start the development server:
-    ```bash
-    npm start
-    ```
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-You can now access the application on your local machine at `http://localhost:5176`.
-## Usage
-To use Toota, follow these steps:
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-1. **Navigate to the website**:
-   - Go to [Toota App](https://www.tootapp.co.za/) to see the application in action.
+4. Configure environment variables:
+   - Copy `.env.example` to `.env` and update the values
+   - Set up your Twilio credentials for SMS functionality
 
-2. **Book a Vehicle**:
-   - Select the type of truck you need.
-   - Provide the necessary details for your trip.
-   - Confirm your booking.
+5. Run migrations:
+   ```bash
+   python manage.py migrate
+   ```
 
-3. **Manage Bookings**:
-   - Track your booking status.
-   - Communicate with the driver if needed.
-### API Usage
-- Access the Swagger API documentation locally:
-  - Open your browser and go to `http://127.0.0.1:8000/swagger/`.
-  - 
-### Docker Setup
-To run the project using Docker, follow these steps:
+6. Create a superuser:
+   ```bash
+   python manage.py createsuperuser
+   ```
 
-1. Ensure Docker is installed on your machine.
-2. Clone the repository:
-    ```bash
-    git clone https://github.com/MfundoDon/toota.git
-    ```
-3. Navigate to the project directory:
-    ```bash
-    cd toota
-    ```
-4. Build and run the Docker containers:
-    ```bash
-    docker-compose up --build
-    ```
+7. Start the development server:
+   ```bash
+   python manage.py runserver
+   ```
 
-This will set up the backend and frontend services in Docker containers.
+### Frontend Setup
 
-- The backend will be accessible at `http://localhost:8000`.
-- The frontend will be accessible at `http://localhost:3000`.
+1. Navigate to the client directory:
+   ```bash
+   cd ../client
+   ```
 
-The Swagger API documentation will be available at `http://localhost:8000/swagger/`.
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-## Contributing
-We welcome contributions to Toota! If you would like to contribute, please follow these guidelines:
+3. Configure environment variables:
+   - Copy `.env.example` to `.env` and update the values
 
-1. **Fork the Repository**: 
-   - Click on the "Fork" button at the top of this repository to create a copy of the repository under your GitHub account.
+4. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-2. **Clone the Forked Repository**:
-   - Clone your forked repository to your local machine:
-     ```bash
-     git clone https://github.com/MfundoDon/toota.git
-     ```
+## WebSocket API
 
-3. **Create a New Branch**:
-   - Create a new branch for your feature or bug fix:
-     ```bash
-     git checkout -b feature-or-bugfix-name
-     ```
+The WebSocket API enables real-time communication for bidding and chat features.
 
-4. **Make Changes**:
-   - Make your changes to the codebase.
+### Connection
 
-5. **Commit Your Changes**:
-   - Commit your changes with a meaningful commit message:
-     ```bash
-     git add .
-     git commit -m "Description of your changes"
-     ```
+Connect to the WebSocket server with your authentication token:
+```javascript
+const socket = new WebSocket(`ws://localhost:8000/ws/toota/?token=${authToken}`);
+```
 
-6. **Push to Your Fork**:
-   - Push your changes to your forked repository:
-     ```bash
-     git push origin feature-or-bugfix-name
-     ```
+### Event Types
 
-7. **Create a Pull Request**:
-   - Open a pull request from your forked repository to the original repository.
+- `create.trip` - Create a new trip
+- `update.trip` - Update an existing trip
+- `create.bid` - Create a new bid for a trip
+- `accept.bid` - Accept a bid for a trip
+- `send.message` - Send a chat message
 
-Please make sure to follow the [Code of Conduct](CODE_OF_CONDUCT.md) and ensure that your code adheres to our coding standards. If you have any questions, feel free to reach out.
+### Example Usage
 
-Thank you for contributing to Toota!
+```javascript
+// Connect to WebSocket
+const socket = new WebSocket(`ws://localhost:8000/ws/toota/?token=${authToken}`);
+
+// Listen for events
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Received:', data);
+};
+
+// Send a bid
+socket.send(JSON.stringify({
+  type: 'create.bid',
+  data: {
+    trip: 'trip-uuid',
+    driver: 'driver-uuid',
+    amount: 100.00
+  }
+}));
+```
+
+## REST API Endpoints
+
+### Authentication
+- `POST /api/auth/register/` - Register a new user
+- `POST /api/auth/login/` - Login and get tokens
+- `POST /api/auth/refresh/` - Refresh access token
+
+### Trips
+- `GET /api/trips/` - List all trips
+- `POST /api/trips/` - Create a new trip
+- `GET /api/trips/{id}/` - Get trip details
+- `PUT /api/trips/{id}/` - Update a trip
+- `POST /api/trips/{id}/cancel/` - Cancel a trip
+- `POST /api/trips/{id}/complete/` - Complete a trip
+
+### Bidding
+- `GET /api/trips/{id}/bids/` - List all bids for a trip
+- `POST /api/trips/{id}/bids/` - Create a new bid
+- `POST /api/trips/{id}/bids/{bid_id}/accept/` - Accept a bid
+
+### Chat
+- `GET /api/trips/{id}/messages/` - Get chat messages for a trip
+- `POST /api/trips/{id}/messages/` - Send a new message
+- `PATCH /api/trips/{id}/messages/{message_id}/` - Mark a message as read
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 

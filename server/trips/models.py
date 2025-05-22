@@ -5,6 +5,8 @@ from authentication.models import Driver, User
 from django.utils import timezone
 from django.conf import settings
 from datetime import datetime
+from django.utils.crypto import get_random_string
+
 VEHICLE_TYPES = (
         ('bakkie', 'bakkie'),
         ('truck_1', '1 ton Truck'),
@@ -69,12 +71,42 @@ class Trip(models.Model):
     bid = models.DecimalField(max_digits=10, decimal_places=2, null=False, blank=False, default=0.00)
     number_of_floors = models.IntegerField(default=0, null=False)
     is_accepted = models.BooleanField(default=False)
+    # New fields for bidding
+    min_bid = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    max_bid = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    allow_bidding = models.BooleanField(default=True)
+    bidding_end_time = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f'{self.id}'
     
     def get_absolute_url(self):
         return reverse('trip:trip_detail', kwargs={'trip_id': self.id})
+    
+class Bid(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, unique=True)
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='bids')
+    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name='bids')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    is_accepted = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Bid of {self.amount} for Trip {self.trip.id} by {self.driver.full_name}"
+
+class ChatMessage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, unique=True)
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['timestamp']
+
+    def __str__(self):
+        return f"Message from {self.sender.full_name} for Trip {self.trip.id}"
     
 class Payment(models.Model):
     PAID = 'PAID'

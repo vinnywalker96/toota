@@ -1,31 +1,24 @@
 from django.urls import path
 from .views import (
-    TripListCreateView, 
-    TripRetrieveUpdateDeleteView, 
-    TripRetrieveByDriverView, 
-    TripListView, 
-    TripCompletedCountView, 
-    PaymentListCreateAPIView, 
-    PaymentRetrieveUpdateDestroyAPIView, 
-    DriverAcceptanceRateView, 
-    DriverTotalTripsCompletedView, 
-    DriverDailyEarningsView
+    TripListCreateView, TripDetailView, TripUpdateView, 
+    TripCancelView, TripCompleteView, BidListCreateView, 
+    BidDetailView, BidAcceptView, ChatMessageListCreateView, 
+    ChatMessageDetailView
 )
 
-app_name = 'trip'
-
 urlpatterns = [
-    path('', TripListCreateView.as_view(), name='trip-list-create'),
-    path('<uuid:pk>/', TripRetrieveUpdateDeleteView.as_view(), name='trip-retrieve-update-delete'),
-    path('driver/<int:driver_id>/', TripRetrieveByDriverView.as_view(), name='trip-retrieve-by-driver'),
-    path('all/', TripListView.as_view(), name='all-trips'),
-    path('completed/', TripCompletedCountView.as_view(), name='completed-trips'),
-    path('payments/', PaymentListCreateAPIView.as_view(), name='payment-list-create'),
-    path('payments/<uuid:pk>/', PaymentRetrieveUpdateDestroyAPIView.as_view(), name='payment-detail'),
-    path('driver/<int:driver_id>/acceptance_rate/', DriverAcceptanceRateView.as_view(), name='driver-acceptance-rate'),
-    path('driver/<int:driver_id>/total_trips_completed/', DriverTotalTripsCompletedView.as_view(), name='driver-total-trips-completed'),
-    path('driver/<int:driver_id>/earnings/<str:date>/', DriverDailyEarningsView.as_view(), name='driver-daily-earnings'),
+    path('trip/all/', TripListCreateView.as_view(), name='trip-list-create'),
+    path('trip/<uuid:trip_id>/', TripDetailView.as_view(), name='trip-detail'),
+    path('trip/<uuid:trip_id>/update/', TripUpdateView.as_view(), name='trip-update'),
+    path('trip/<uuid:trip_id>/cancel/', TripCancelView.as_view(), name='trip-cancel'),
+    path('trip/<uuid:trip_id>/complete/', TripCompleteView.as_view(), name='trip-complete'),
+    
+    # Bid endpoints
+    path('trips/<uuid:trip_id>/bids/', BidListCreateView.as_view(), name='bid-list-create'),
+    path('trips/<uuid:trip_id>/bids/<uuid:bid_id>/', BidDetailView.as_view(), name='bid-detail'),
+    path('trips/<uuid:trip_id>/bids/<uuid:bid_id>/accept/', BidAcceptView.as_view(), name='bid-accept'),
+    
+    # Chat message endpoints
+    path('trips/<uuid:trip_id>/messages/', ChatMessageListCreateView.as_view(), name='message-list-create'),
+    path('trips/<uuid:trip_id>/messages/<uuid:message_id>/', ChatMessageDetailView.as_view(), name='message-detail'),
 ]
-
-
-
