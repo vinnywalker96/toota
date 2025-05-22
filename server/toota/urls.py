@@ -45,7 +45,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('authentication.urls')),
     path('token/refresh', TokenRefreshView.as_view(), name='token_refresh'),
-    path('api/trip/', include('trips.urls', 'trip',))
+    path('api/trip/', include('trips.urls'))
     
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
