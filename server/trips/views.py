@@ -1,173 +1,276 @@
-from rest_framework import generics, permissions, status
+from rest_framework import generics, status, permissions
 from rest_framework.response import Response
-from .models import Trip, Payment
-from authentication.models import Driver
-from .serializers import TripSerializer, PaymentSerializer
-from rest_framework import permissions
-from django.core.mail import EmailMessage
-from django.template.loader import render_to_string
-from reportlab.pdfgen import canvas
-from io import BytesIO
-import logging
-import calendar
-from django.db.models import Count
+from rest_framework.views import APIView
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db.models import Q, Sum, Count
+from datetime import datetime, timedelta
+import logging
+
+from .models import Trip, Payment, Bid, ChatMessage
+from .serializers import TripSerializer, PaymentSerializer, BidSerializer, ChatMessageSerializer
+from .services import NotificationService
+from authentication.models import Driver, User
 
 logger = logging.getLogger(__name__)
 
-class IsOwnerOrDriver(permissions.BasePermission):
-    def has_object_permission(self, request, view, obj):
-        logger.debug(f"User: {request.user}, Driver: {obj.driver}")
-        if request.method in permissions.SAFE_METHODS:
-            return True
-        return obj.user == request.user or (obj.driver and obj.driver.user == request.user)
-
+# Trip views
 class TripListCreateView(generics.ListCreateAPIView):
-    queryset = Trip.objects.all()
+    """
+    List all trips or create a new trip
+    """
     serializer_class = TripSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+    def get_queryset(self):
+        user = self.request.user
+        if hasattr(user, 'vehicle_type'):  # Driver
+            return Trip.objects.filter(
+                Q(driver=user) | 
+                Q(driver__isnull=True, status=Trip.REQUESTED)
+            ).order_by('-created')
+        else:  # Regular user
+            return Trip.objects.filter(user=user).order_by('-created')
 
-class TripRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Trip.objects.all()
+    def perform_create(self, serializer):
+        trip = serializer.save(user=self.request.user)
+        # Send SMS notification to all drivers
+        NotificationService.notify_new_trip(trip)
+
+class TripDetailView(generics.RetrieveAPIView):
+    """
+    Retrieve a trip
+    """
     serializer_class = TripSerializer
-    lookup_field = 'pk'
-    permission_classes = [IsOwnerOrDriver]
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_url_kwarg = 'trip_id'
 
     def get_queryset(self):
         return Trip.objects.all()
 
-    def perform_update(self, serializer):
-        serializer.save(driver=self.request.user.driver)
-
-class TripRetrieveByDriverView(generics.ListAPIView):
-    queryset = Trip.objects.all()
+class TripUpdateView(generics.UpdateAPIView):
+    """
+    Update a trip
+    """
     serializer_class = TripSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_url_kwarg = 'trip_id'
+
+    def get_queryset(self):
+        user = self.request.user
+        if hasattr(user, 'vehicle_type'):  # Driver
+            return Trip.objects.filter(driver=user)
+        else:  # Regular user
+            return Trip.objects.filter(user=user)
+
+class TripCancelView(APIView):
+    """
+    Cancel a trip
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, trip_id):
+        trip = get_object_or_404(Trip, id=trip_id)
+        
+        # Check if user is authorized to cancel this trip
+        user = request.user
+        if not (trip.user == user or trip.driver == user):
+            return Response(
+                {"detail": "You are not authorized to cancel this trip."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if trip can be cancelled
+        if trip.status in [Trip.COMPLETED, Trip.CANCELLED]:
+            return Response(
+                {"detail": f"Cannot cancel a trip that is already {trip.status}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update trip status
+        trip.status = Trip.CANCELLED
+        trip.save()
+        
+        return Response(
+            {"detail": "Trip cancelled successfully."},
+            status=status.HTTP_200_OK
+        )
+
+class TripCompleteView(APIView):
+    """
+    Complete a trip
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, trip_id):
+        trip = get_object_or_404(Trip, id=trip_id)
+        
+        # Check if user is authorized to complete this trip
+        user = request.user
+        if not (trip.user == user or trip.driver == user):
+            return Response(
+                {"detail": "You are not authorized to complete this trip."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if trip can be completed
+        if trip.status != Trip.IN_PROGRESS:
+            return Response(
+                {"detail": "Only in-progress trips can be completed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update trip status
+        trip.status = Trip.COMPLETED
+        trip.save()
+        
+        # Update driver stats if completed by user
+        if trip.driver and user == trip.user:
+            driver = trip.driver
+            driver.total_trips += 1
+            driver.accepted_trips += 1
+            driver.update_acceptance_rate()
+        
+        return Response(
+            {"detail": "Trip completed successfully."},
+            status=status.HTTP_200_OK
+        )
+
+# Bid views
+class BidListCreateView(generics.ListCreateAPIView):
+    """
+    List all bids for a trip or create a new bid
+    """
+    serializer_class = BidSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        driver_id = self.kwargs['driver_id']
-        return Trip.objects.filter(driver_id=driver_id)
-
-class TripListView(generics.ListAPIView):
-    queryset = Trip.objects.all()
-    serializer_class = TripSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return Trip.objects.order_by('-pickup_time')
-
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        in_progress_count = queryset.filter(status='IN_PROGRESS').count()
-        completed_count = queryset.filter(status='COMPLETED').count()
-        return Response({
-            "trips": serializer.data,
-            "in_progress_count": in_progress_count,
-            "completed_count": completed_count
-        }, status=status.HTTP_200_OK)
-
-class TripCompletedCountView(generics.GenericAPIView):
-    permission_classes = [permissions.IsAuthenticated]
-    serializer_class = TripSerializer
-    queryset = Trip.objects.all()
-
-    def get(self, request, *args, **kwargs):
-        completed_trips_data = self.get_completed_trips_data()
-        return Response(completed_trips_data, status=status.HTTP_200_OK)
-
-    def get_completed_trips_data(self):
-        completed_trips_data = []
-        for month in range(1, 13):
-            month_name = calendar.month_name[month]
-            completed_trips_count = self.get_completed_trips_count(month)
-            completed_trips_data.append({
-                "month": month_name,
-                "completed_trips_count": completed_trips_count
-            })
-        return completed_trips_data
-
-    def get_completed_trips_count(self, month):
-        return Trip.objects.filter(status='COMPLETED', pickup_time__month=month).count()
-
-class PaymentListCreateAPIView(generics.ListCreateAPIView):
-    queryset = Payment.objects.all()
-    serializer_class = PaymentSerializer
-    permission_classes = [permissions.IsAuthenticated]
+        trip_id = self.kwargs.get('trip_id')
+        return Bid.objects.filter(trip_id=trip_id).order_by('-timestamp')
 
     def perform_create(self, serializer):
-        serializer.save()
+        trip_id = self.kwargs.get('trip_id')
+        trip = get_object_or_404(Trip, id=trip_id)
+        
+        # Check if user is a driver
+        user = self.request.user
+        if not hasattr(user, 'vehicle_type'):
+            raise permissions.PermissionDenied("Only drivers can place bids.")
+        
+        # Create the bid
+        bid = serializer.save(trip=trip, driver=user)
+        
+        # Send notification to trip owner
+        NotificationService.notify_bid_received(bid)
 
-class PaymentRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Payment.objects.all()
-    serializer_class = PaymentSerializer
+class BidDetailView(generics.RetrieveAPIView):
+    """
+    Retrieve a bid
+    """
+    serializer_class = BidSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_url_kwarg = 'bid_id'
+
+    def get_queryset(self):
+        trip_id = self.kwargs.get('trip_id')
+        return Bid.objects.filter(trip_id=trip_id)
+
+class BidAcceptView(APIView):
+    """
+    Accept a bid
+    """
     permission_classes = [permissions.IsAuthenticated]
 
-class DriverAcceptanceRateView(generics.GenericAPIView):
+    def post(self, request, trip_id, bid_id):
+        trip = get_object_or_404(Trip, id=trip_id)
+        bid = get_object_or_404(Bid, id=bid_id, trip=trip)
+        
+        # Check if user is the trip owner
+        if trip.user != request.user:
+            return Response(
+                {"detail": "Only the trip owner can accept bids."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if trip is still open for bidding
+        if not trip.allow_bidding:
+            return Response(
+                {"detail": "This trip is not open for bidding."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if bidding end time has passed
+        if trip.bidding_end_time and trip.bidding_end_time < timezone.now():
+            return Response(
+                {"detail": "Bidding period has ended for this trip."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Accept the bid
+        bid.is_accepted = True
+        bid.save()
+        
+        # Update the trip
+        trip.driver = bid.driver
+        trip.bid = bid.amount
+        trip.is_accepted = True
+        trip.status = Trip.ACCEPTED
+        trip.allow_bidding = False
+        trip.save()
+        
+        # Update driver's acceptance rate
+        driver = bid.driver
+        driver.accepted_trips += 1
+        driver.total_trips += 1
+        driver.update_acceptance_rate()
+        
+        # Send notification to the driver
+        NotificationService.notify_bid_accepted(bid)
+        
+        return Response(
+            {"detail": "Bid accepted successfully."},
+            status=status.HTTP_200_OK
+        )
+
+# Chat message views
+class ChatMessageListCreateView(generics.ListCreateAPIView):
+    """
+    List all messages for a trip or create a new message
+    """
+    serializer_class = ChatMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request, driver_id):
-        try:
-            driver = Driver.objects.get(id=driver_id)
-            total_trips = Trip.objects.filter(driver=driver).count()
-            accepted_trips = Trip.objects.filter(driver=driver, status='ACCEPTED').count()
-            acceptance_rate = (accepted_trips / total_trips) * 100 if total_trips > 0 else 0
-            acceptance_rate = round(acceptance_rate, 2)  # Round to two decimal places
-            return Response({'acceptance_rate': acceptance_rate}, status=status.HTTP_200_OK)
-        except Driver.DoesNotExist:
-            return Response({'detail': 'Driver not found.'}, status=status.HTTP_404_NOT_FOUND)
-class DriverTotalTripsCompletedView(generics.GenericAPIView):
+    def get_queryset(self):
+        trip_id = self.kwargs.get('trip_id')
+        return ChatMessage.objects.filter(trip_id=trip_id).order_by('timestamp')
+
+    def perform_create(self, serializer):
+        trip_id = self.kwargs.get('trip_id')
+        trip = get_object_or_404(Trip, id=trip_id)
+        
+        # Check if user is authorized to send messages for this trip
+        user = self.request.user
+        if not (trip.user == user or (trip.driver and trip.driver == user)):
+            raise permissions.PermissionDenied("You are not authorized to send messages for this trip.")
+        
+        # Create the message
+        message = serializer.save(trip=trip, sender=user)
+        
+        # Send notification to the recipient
+        NotificationService.notify_new_message(message)
+
+class ChatMessageDetailView(generics.RetrieveUpdateAPIView):
+    """
+    Retrieve or update a message (for marking as read)
+    """
+    serializer_class = ChatMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
+    lookup_url_kwarg = 'message_id'
 
-    def get(self, request, driver_id):
-        try:
-            driver = Driver.objects.get(id=driver_id)
-            total_trips = Trip.objects.filter(driver=driver).count()
-            completed_trips = Trip.objects.filter(driver=driver, status='COMPLETED').count()
-            total_trips_fraction = f"{completed_trips}/{total_trips}" if total_trips > 0 else "0/0"
-            completion_percentage = (completed_trips / total_trips) * 100 if total_trips > 0 else 0
-            rounded_completion_percentage = round(completion_percentage, 2)
-            return Response({
-                'total_trips_completed': total_trips_fraction,
-                'completion_percentage': rounded_completion_percentage
-            }, status=status.HTTP_200_OK)
-        except Driver.DoesNotExist:
-            return Response({'detail': 'Driver not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-class DriverDailyEarningsView(generics.GenericAPIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request, driver_id, date):
-        try:
-            # Parse the date from the URL
-            date = timezone.datetime.strptime(date, '%Y-%m-%d').date()
-            
-            # Calculate start and end of the day
-            start_of_day = timezone.make_aware(timezone.datetime.combine(date, timezone.datetime.min.time()))
-            end_of_day = timezone.make_aware(timezone.datetime.combine(date, timezone.datetime.max.time()))
-            
-            # Filter payments by driver and date
-            payments = Payment.objects.filter(driver_id=driver_id, payment_date__range=(start_of_day, end_of_day))
-            
-            # Calculate total earnings before and after compensation
-            total_earnings_before_compensation = sum(payment.amount_paid for payment in payments)
-            total_compensation = total_earnings_before_compensation * 0.20  
-            total_earnings_after_compensation = total_earnings_before_compensation - total_compensation
-            
-            response_data = {
-                'driver_id': driver_id,
-                'date': date,
-                'total_earnings_before_compensation': str(total_earnings_before_compensation),
-                'total_compensation': str(total_compensation),
-                'total_earnings_after_compensation': str(total_earnings_after_compensation),
-                'total_payments_count': payments.count(),
-            }
-            
-            return Response(response_data, status=status.HTTP_200_OK)
-        except ValueError:
-            return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
-
-
+    def get_queryset(self):
+        trip_id = self.kwargs.get('trip_id')
+        return ChatMessage.objects.filter(trip_id=trip_id)
+    
+    def perform_update(self, serializer):
+        # Only allow updating the is_read field
+        serializer.save(content=serializer.instance.content)
