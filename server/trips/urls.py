@@ -6,6 +6,8 @@ from .views import (
     ChatMessageDetailView
 )
 
+app_name = 'trip'
+
 urlpatterns = [
     path('trip/all/', TripListCreateView.as_view(), name='trip-list-create'),
     path('trip/<uuid:trip_id>/', TripDetailView.as_view(), name='trip-detail'),

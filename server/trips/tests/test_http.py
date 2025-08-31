@@ -6,7 +6,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from rest_framework import status
 from authentication.models import User, Driver
-from trips.models import Trip
+from trips.models import Trip, PickupLocation, DropoffLocation
 from rest_framework_simplejwt.tokens import RefreshToken
 from authentication.utils import VEHICLE_TYPES
 
@@ -113,25 +113,33 @@ class TripViewTest(TestCase):
         data = {'email': 'test@example.com', 'password': 'testpassword'}
         response = client.post(reverse('user-login'), data=data)
         self.access = response.data['access']
+        
+        # Create pickup and dropoff locations first
+        pickup_location = PickupLocation.objects.create(
+            location='23 Main avenue',
+            phone_number='1234567890'
+        )
+        
+        dropoff_location = DropoffLocation.objects.create(
+            location='100 Kent Avenue',
+            phone_number='0987654321'
+        )
+        
         trip = Trip.objects.create(
-                pickup_location='23 Main avenue',
-                dropoff_location='100 Kent Avenue',
+                pickup_location=pickup_location,
+                dropoff_location=dropoff_location,
                 vehicle_type=VEHICLE_TYPES[0][0],
                 number_of_floors=2,
                 load_description='This is a test load description.',
                 user=self.user,
-                pickup_time=f'{datetime.date.today()}',
+                pickup_time=datetime.datetime.now(),
                 bid=500,
                 )
-        res = self.client.get('/api/trip/', HTTP_AUTHORIZATION=f'Bearer {self.access}')
+        res = self.client.get('/api/trip/trip/all/', HTTP_AUTHORIZATION=f'Bearer {self.access}')
         
         self.assertEqual(status.HTTP_200_OK, res.status_code)
         # self.assertTrue(Trip.objects.filter(id=str(trip)).exists())
         self.assertEqual(res.data[0]['id'], str(trip.id))
-        self.assertEqual(res.data[0]['pickup_location'], trip.pickup_location)
-        self.assertEqual(res.data[0]['dropoff_location'], trip.dropoff_location)
+        self.assertEqual(res.data[0]['pickup_location']['location'], pickup_location.location)
+        self.assertEqual(res.data[0]['dropoff_location']['location'], dropoff_location.location)
         self.assertEqual(res.data[0]['load_description'], trip.load_description)
-        
-
-
-    
